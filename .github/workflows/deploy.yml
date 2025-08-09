@@ -1,0 +1,67 @@
+name: Deploy to Amazon EC2
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            # Navigate to project directory (create if it doesn't exist)
+            mkdir -p ~/student-project-tracker
+            cd ~/student-project-tracker
+            
+            # Remove old files if they exist
+            rm -rf *
+            
+            # Copy new files from the repository
+            git clone https://github.com/${{ github.repository }}.git .
+            
+            # Create virtual environment if it doesn't exist
+            python3 -m venv venv
+            
+            # Activate virtual environment and install dependencies
+            source venv/bin/activate
+            pip install --upgrade pip
+            pip install -r requirements.txt
+            
+            # Create .env file with secrets
+            cat > .env << EOL
+            VAULT_ADDR=${{ secrets.VAULT_ADDR }}
+            VAULT_TOKEN=${{ secrets.VAULT_TOKEN }}
+            EOL
+            
+            # Create systemd service file for the application
+            sudo tee /etc/systemd/system/student-tracker.service << EOL
+            [Unit]
+            Description=Student Progress Tracker FastAPI Application
+            After=network.target
+
+            [Service]
+            User=${{ secrets.EC2_USERNAME }}
+            WorkingDirectory=/home/${{ secrets.EC2_USERNAME }}/student-project-tracker
+            Environment="PATH=/home/${{ secrets.EC2_USERNAME }}/student-project-tracker/venv/bin"
+            EnvironmentFile=/home/${{ secrets.EC2_USERNAME }}/student-project-tracker/.env
+            ExecStart=/home/${{ secrets.EC2_USERNAME }}/student-project-tracker/venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
+
+            [Install]
+            WantedBy=multi-user.target
+            EOL
+            
+            # Reload systemd and restart the service
+            sudo systemctl daemon-reload
+            sudo systemctl enable student-tracker
+            sudo systemctl restart student-tracker
