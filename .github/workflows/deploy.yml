@@ -29,10 +29,15 @@ jobs:
             cd ~/student-project-tracker
             
             # Remove old files if they exist
-            rm -rf *
+            rm -rf ./* ./.??*
             
             # Copy new files from the repository
             git clone https://github.com/${{ github.repository }}.git .
+            
+            if [ ! -f requirements.txt ]; then
+              echo "ERROR: requirements.txt not found. Deployment aborted."
+              exit 1
+            fi
             
             # Create virtual environment if it doesn't exist
             python3 -m venv venv
